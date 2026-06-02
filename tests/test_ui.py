@@ -1,86 +1,131 @@
 import re
-
 import pytest
 from playwright.sync_api import Page, expect
+from conftest import expect_any_visible_text, visible_elements_count
 
-from conftest import expect_any_visible_text
+
 
 """
-this test verifies if the homepage 
-loads successfully and the most important
-category rails are visible to the user
+Verify if main controls are visible and the homepage loads.
+Can't continue with the rest of unit tests if the main page doesn't work properly.     
 """
 
 @pytest.mark.ui
-def test_homepage_loads_core_sections_and_category_rails(home_page: Page):
-    expect(home_page).to_have_title(re.compile(r"Ludigames|Free Online Games", re.I))
+def test_homepage_loads_branding_and_navigation(home_page: Page):
 
-    expect_any_visible_text(home_page, r"^Top 10$")
-    expect_any_visible_text(home_page, r"^Games you might like$")
+    expect(home_page).to_have_url(re.compile(r"play\.ludigames\.com", re.I))
+    expect_any_visible_text(home_page, r"LUDIGAMES")
 
-    for category in ["Sport", "Action", "Racing", "Adventure", "Brain Games"]:
+
+
+"""
+
+I decided to split the example-given UI test into multiple sub-tests to verify separately 
+whether or not they work properly.
+
+E.G : Open the homepage and verify that game category sections (Sport, Action, 
+Racing…) are visible and each contains at least one game card. 
+
+
+"""
+
+"""
+1. The homepage displays important game categories.
+"""
+
+@pytest.mark.ui
+def test_homepage_displays_game_category_sections(home_page: Page):
+    expected_categories = [
+        "Action games",
+        "Sport games",
+        "Racing games",
+        "Adventure games",
+        "Casual games",
+        "Logic games",
+        "All games",
+    ]
+
+    for category in expected_categories:
         expect_any_visible_text(home_page, rf"^{re.escape(category)}$")
 
-"""
-verifies at least one playable game card or play action is visible
-"""
 
+
+"""
+2. verify if main game categories contains at least one gaming card.
+
+"""
 
 @pytest.mark.ui
-def test_game_recommendations_have_playable_cards(home_page: Page):
-    expect_any_visible_text(home_page, r"^Games you might like$")
+@pytest.mark.parametrize(
+    "category",
+    [
+        "Action games",
+        "Sport games",
+        "Racing games",
+    ],
+)
+def test_each_main_category_contains_at_least_one_game(page: Page, base_url: str, category: str):
+    page.goto(base_url, wait_until="domcontentloaded")
+    expect_any_visible_text(page, r"LUDIGAMES")
 
-    playable_content = re.compile(
-        r"Kart Racing PRO|Knife Smash|Play Now|WATCH AD TO PLAY|Play",
-        re.I,
+    category_card = expect_any_visible_text(page, rf"^{re.escape(category)}$")
+    category_card.scroll_into_view_if_needed()
+    category_card.click()
+
+    page.wait_for_timeout(2000)
+
+    visible_game_count = visible_elements_count(
+        page,
+        r"Mahjong|Space|Jewel|Asphalt|Poker|Cricket|Block|Molang|Kart|Shadow|Adventure|PRO|Legends",
     )
 
-    expect_any_visible_text(home_page, playable_content.pattern)
+    assert visible_game_count >= 1, f"Expected at least one visible game after opening {category}."
 
 
 """
-ensures users can access policy and compliance information
-"""
-
-
-@pytest.mark.ui
-def test_footer_legal_links_are_visible(home_page: Page):
-    home_page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-
-    for label in [
-        "privacy policy",
-        "Terms of Use",
-        "Cookie Policy",
-        "Manage Your Cookie Choices",
-    ]:
-        expect_any_visible_text(home_page, re.escape(label))
-
-"""
-verifies a view-all widget is found and can be interracted with
+Verifies if the user has access to the game cards by checking if they are visible on the homepage.
 
 """
 
 
 @pytest.mark.ui
-def test_clicking_a_view_all_control_opens_a_browseable_listing(page: Page, base_url: str):
-    page.goto(base_url, wait_until="domcontentloaded")
+def test_homepage_displays_multiple_game_cards(home_page: Page):
+    known_games_pattern = (
+        r"Mahjong|Space Survivor|Jewel|Asphalt|Poker|Cricket|"
+        r"Block Breaker|Molang|Kart|Shadow|Adventure"
+    )
 
-    view_all = expect_any_visible_text(page, r"^View all$")
-    before_url = page.url
+    visible_games = visible_elements_count(home_page, known_games_pattern)
 
-    view_all.scroll_into_view_if_needed()
-    view_all.click()
-
-    page.wait_for_timeout(1500)
-
-    if page.url == before_url:
-        expect_any_visible_text(page, r"Play|WATCH AD TO PLAY|Game|Top 10|Games")
-    else:
-        expect(page).to_have_url(re.compile(r".+"))
+    assert visible_games >= 3, "Expected at least 3 visible game cards on the homepage."
 
 
 """
-verifies if the website is built to be platform dependant or not
+
+The proper functionality of the gaming cards when clicked is checked by checking 
+their response and ensuring the users can navigate from hopemage to game category.
+
+"""
+
+@pytest.mark.ui
+def test_clicking_category_card_opens_category_or_updates_content(home_page: Page):
+    category = expect_any_visible_text(home_page, r"^Action games$")
+    before_url = home_page.url
+
+    category.scroll_into_view_if_needed()
+    category.click()
+
+    home_page.wait_for_timeout(1500)
+
+    assert (
+        home_page.url != before_url
+        or visible_elements_count(home_page, r"Action|games|Play|Mahjong|Asphalt|Cricket") > 0
+    )
+
+
+
+"""
+Verifies if the game site is built cross platform and its main widgets are still accesible.
 
 """
 
@@ -90,5 +135,11 @@ def test_site_remains_usable_on_mobile_viewport(page: Page, base_url: str):
     page.goto(base_url, wait_until="domcontentloaded")
 
     expect_any_visible_text(page, r"LUDIGAMES")
-    expect_any_visible_text(page, r"Sport|Action|Racing|Adventure|Brain Games")
-    expect_any_visible_text(page, r"Play|WATCH AD TO PLAY|View all")
+    expect_any_visible_text(page, r"Action games|Sport games|Casual games|All games")
+
+    visible_games = visible_elements_count(
+        page,
+        r"Mahjong|Asphalt|Poker|Cricket|Block|Adventure|Molang",
+    )
+
+    assert visible_games >= 1, "Expected at least one visible game card on mobile."

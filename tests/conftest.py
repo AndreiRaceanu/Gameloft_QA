@@ -25,11 +25,7 @@ def http_client() -> httpx.Client:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
-    with httpx.Client(
-        headers=headers,
-        follow_redirects=True,
-        timeout=20.0,
-    ) as client:
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=20.0) as client:
         yield client
 
 
@@ -52,32 +48,6 @@ def same_host(url: str, base_url: str) -> bool:
 
 def absolute_url(base_url: str, maybe_url: str) -> str:
     return urljoin(base_url, maybe_url)
-
-
-
-def extract_internal_links(html: str, base_url: str, limit: int = 12) -> list[str]:
-    soup = BeautifulSoup(html, "html.parser")
-    urls: list[str] = []
-
-    for a in soup.select("a[href]"):
-        href = (a.get("href") or "").strip()
-
-        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
-            continue
-
-        url = absolute_url(base_url, href)
-        parsed = urlparse(url)
-
-        if parsed.scheme in {"http", "https"} and same_host(url, base_url):
-            normalized = parsed._replace(fragment="").geturl()
-
-            if normalized not in urls:
-                urls.append(normalized)
-
-        if len(urls) >= limit:
-            break
-
-    return urls
 
 
 def extract_asset_urls(html: str, base_url: str, limit: int = 20) -> list[str]:
@@ -110,19 +80,11 @@ def extract_asset_urls(html: str, base_url: str, limit: int = 20) -> list[str]:
 
 
 def expect_any_visible_text(page: Page, pattern: str, timeout_ms: int = TIMEOUT_MS):
-    """
-    Finds the first visible element matching the given text pattern.
-
-    This is useful for Ludigames because the page can contain duplicated
-    hidden elements for desktop/mobile layouts, sliders, or lazy-loaded sections.
-    """
     locator = page.get_by_text(re.compile(pattern, re.I))
     deadline = time.monotonic() + timeout_ms / 1000
 
     while time.monotonic() < deadline:
-        count = locator.count()
-
-        for index in range(count):
+        for index in range(locator.count()):
             candidate = locator.nth(index)
 
             if candidate.is_visible():
@@ -131,3 +93,14 @@ def expect_any_visible_text(page: Page, pattern: str, timeout_ms: int = TIMEOUT_
         page.wait_for_timeout(250)
 
     raise AssertionError(f"No visible element found for text pattern: {pattern}")
+
+
+def visible_elements_count(page: Page, pattern: str) -> int:
+    locator = page.get_by_text(re.compile(pattern, re.I))
+    visible_count = 0
+
+    for index in range(locator.count()):
+        if locator.nth(index).is_visible():
+            visible_count += 1
+
+    return visible_count
